@@ -29,18 +29,14 @@ NexusChat is a fault-tolerant distributed messaging system where clients send me
 ## 📁 Project Structure
 
 ```
-fault_tolerance/
-├── server.py            # Core server node — store, retrieve, crash, recover
-├── failure_detector.py  # Heartbeat-based failure detection
-├── replication.py       # Message replication across RF alive nodes
-├── failover.py          # Automatic primary-backup failover
-├── recovery_sync.py     # Anti-entropy sync when a node rejoins
-├── main.py              # End-to-end simulation of all modules
-└── api.py               # Flask REST API — connects backend to frontend
-
-Nexus_Chat_Frontend/
-└── src/
-    └── NexusChat.jsx    # React frontend — WhatsApp-style UI
+├── server.py               # Core server node — store, retrieve, crash, recover
+├── failure_detector.py     # Heartbeat-based failure detection
+├── replication.py          # Message replication (classic)
+├── replication_manager.py  # Quorum-based message replication & strong consistency
+├── failover.py             # Automatic primary-backup failover
+├── recovery_sync.py        # Anti-entropy sync when a node rejoins
+├── mian.py                 # End-to-end simulation of all modules
+└── api.py                  # Flask REST API — connects backend to frontend
 ```
 
 ---
@@ -62,8 +58,7 @@ pip3 install flask flask-cors
 ### Step 2 — Start the backend
 
 ```bash
-cd fault_tolerance
-python3 api.py
+python api.py
 ```
 
 You should see:
@@ -107,7 +102,7 @@ Base URL: `http://localhost:8000/api`
 
 ### 1. Normal Operation
 - All 3 nodes boot and begin sending heartbeats every 2 seconds
-- Messages are replicated across `RF` alive nodes using `ReplicationManager`
+- Messages are replicated using Quorum-based consensus in `ReplicationManager`
 - Frontend polls `/api/status`, `/api/messages`, `/api/logs` every 2 seconds
 
 ### 2. When a Node Crashes
@@ -130,8 +125,8 @@ Base URL: `http://localhost:8000/api`
 |------|--------|--------|
 | `failure_detector.py` | Heartbeat timeout model | Chandra & Toueg, 1996 |
 | `failure_detector.py` | FLP Impossibility | Fischer, Lynch, Paterson, 1985 |
-| `replication.py` | CAP Theorem (AP design) | Brewer, 2000 |
-| `replication.py` | Replication Factor (RF) | Apache Cassandra / HDFS |
+| `replication_manager.py` | Quorum-based Consistency | Gifford, 1979 |
+| `replication_manager.py` | Replication Factor (RF) | Apache Cassandra / HDFS |
 | `failover.py` | Primary-Backup failover | Gray & Reuter, 1992 |
 | `recovery_sync.py` | Anti-Entropy synchronisation | Demers et al., 1987 |
 
@@ -142,8 +137,7 @@ Base URL: `http://localhost:8000/api`
 If you just want to test the backend logic without the frontend:
 
 ```bash
-cd fault_tolerance
-python3 main.py
+python mian.py
 ```
 
 This runs a full 6-phase simulation — boot, replication, crash, failover, recovery sync, and reports.
@@ -163,6 +157,6 @@ This runs a full 6-phase simulation — boot, replication, crash, failover, reco
 
 ## 📝 Notes
 
-- The system is designed as **AP** (Availability + Partition Tolerance) under the CAP theorem — it keeps serving reads and writes even when nodes go down, prioritising availability over strict consistency.
-- The replication factor `RF` dynamically equals the number of alive nodes at send time.
-- All 7 Python files must be in the **same folder** to run correctly.
+- The system incorporates **Quorum-Based Replication** providing **Strong Consistency** by ensuring Write Quorum + Read Quorum > Replication Factor.
+- The system includes a 'Read-Repair' mechanism to actively enforce consistency if anomalies/misses are detected across replica nodes.
+- All Python files must be in the **same folder** to run correctly.
