@@ -200,3 +200,25 @@ class ReplicationManager:
         print("="*50 + "\n")
 
 
+# ── DEMO — run this file directly to test your code ──────────────────────────
+if __name__ == "__main__":
+
+    s1 = Server("Server1")
+    s2 = Server("Server2")
+    s3 = Server("Server3")
+    all_servers = [s1, s2, s3]
+
+    rm = ReplicationManager(all_servers, replication_factor=2)
+
+    print("--- Sending messages ---")
+    id1 = rm.replicate_message("Hello from Alice!", sender="Alice")
+    id2 = rm.replicate_message("Meeting at 3pm",   sender="Bob")
+
+    print("\n--- Crash Server1 ---")
+    s1.simulate_crash()
+
+    print("\n--- Retrieve after crash ---")
+    rm.retrieve_message(id1)
+
+    rm.print_storage_report()
+
