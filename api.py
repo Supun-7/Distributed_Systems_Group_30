@@ -3,7 +3,7 @@ import time
 
 from server import Server
 from failure_detector import FailureDetector
-from replication import ReplicationManager
+from replication_manager import ReplicationManager
 from failover import FailoverManager
 from recovery_sync import RecoverySyncManager
 
