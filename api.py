@@ -6,6 +6,7 @@ from failure_detector import FailureDetector
 from replication_manager import ReplicationManager
 from failover import FailoverManager
 from recovery_sync import RecoverySyncManager
+from time_sync import TimeSyncManager
 
 app = Flask(__name__)
 
@@ -36,6 +37,7 @@ detector   = FailureDetector(all_servers, timeout_seconds=5)
 replicator = ReplicationManager(all_servers, replication_factor=3)
 failover   = FailoverManager(all_servers, detector)
 sync_mgr   = RecoverySyncManager(all_servers)
+time_mgr   = TimeSyncManager(all_servers)
 
 # Region labels shown in the frontend
 SERVER_META = {
@@ -115,8 +117,8 @@ def get_messages():
                     "time":    time.strftime('%H:%M:%S', time.localtime(data["timestamp"])),
                     "server":  s.name,   # Which server we read it from
                 }
-    # Sort by stored timestamp
-    messages = sorted(seen.values(), key=lambda m: m["time"])
+    # Sort by corrected timestamp (time_mgr handles fallback to raw timestamp)
+    messages = time_mgr.reorder_messages(list(seen.values()))
     return jsonify(messages)
 
 
@@ -145,6 +147,8 @@ def send_message():
         targets = replicator.replication_map.get(msg_id, [])
         _log("store", f"{msg_id} stored. Replicated to: {', '.join(targets)}")
         _log("heartbeat", f"{alive[0].name} → primary. RF={len(alive)}")
+        # Assign a corrected timestamp to the message
+        time_mgr.timestamp_message(msg_id, alive[0].name)
         return jsonify({"id": msg_id, "server": alive[0].name}), 201
     else:
         _log("error", "Replication failed — no alive servers accepted the write.")
@@ -205,6 +209,24 @@ def recover_server(server_id):
     detector.check_all_servers()
 
     return jsonify({"status": "recovered", "server": s.name, "synced": transferred})
+
+
+@app.route("/api/time/sync", methods=["POST"])
+def trigger_sync():
+    """Run Berkeley Algorithm across all alive servers."""
+    master = time_mgr.synchronize()
+    _log("store", f"Clock sync complete. Master time: {time.strftime('%H:%M:%S', time.localtime(master))}")
+    return jsonify({"master_time": master, "status": "synced"})
+
+
+@app.route("/api/time/report")
+def time_report():
+    """Return time sync stats — skews, sync events, timestamped message count."""
+    return jsonify({
+        "sync_events":           len(time_mgr.sync_log),
+        "skews":                 time_mgr.clock_sim.offsets,
+        "timestamped_messages":  len(time_mgr.message_timestamps),
+    })
 
 
 @app.route("/api/logs")
