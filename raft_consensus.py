@@ -228,7 +228,228 @@ class RaftNode:
         self.voted_for = None
         self.votes_received = set()
         self.current_leader = None
-        self._reset_election_timer()    
+        self._reset_election_timer() 
+
+    def send_heartbeats(self):
+        for peer in self.peer_names:
+            self.replicate_to_peer(peer, heartbeat_only=True)
+
+    def replicate_to_peer(self, peer, heartbeat_only=False):
+        with self._lock:
+            if self.role != NodeRole.LEADER:
+                return False
+
+            next_idx = self.next_index.get(peer, 1)
+            prev_log_index = next_idx - 1
+            prev_log_term = 0
+            if prev_log_index > 0:
+                prev_log_term = self.log[prev_log_index - 1].term
+
+            entries = []
+            if not heartbeat_only:
+                entries = self.log[next_idx - 1: next_idx - 1 + self.batch_size]
+
+            payload = {
+                "term": self.current_term,
+                "leader_id": self.server.name,
+                "prev_log_index": prev_log_index,
+                "prev_log_term": prev_log_term,
+                "entries": [
+                    {
+                        "term": entry.term,
+                        "index": entry.index,
+                        "command": entry.command,
+                        "timestamp": entry.timestamp,
+                    }
+                    for entry in entries
+                ],
+                "leader_commit": self.commit_index,
+            }
+
+        response = self.transport.append_entries(self.server.name, peer, payload)
+        if response is None:
+            return False
+
+        return self._process_append_response(peer, response, len(entries))
+
+    def _process_append_response(self, peer, response, entries_sent):
+        with self._lock:
+            if response["term"] > self.current_term:
+                self._step_down(response["term"])
+                return False
+
+            if self.role != NodeRole.LEADER:
+                return False
+
+            if response["success"]:
+                if entries_sent > 0:
+                    self.match_index[peer] = response["match_index"]
+                    self.next_index[peer] = response["match_index"] + 1
+                self._advance_commit_index()
+                return True
+
+            self.next_index[peer] = max(1, self.next_index.get(peer, 1) - 1)
+            return False
+
+    def handle_append_entries(self, payload):
+        with self._lock:
+            leader_term = payload["term"]
+
+            if leader_term < self.current_term:
+                return {
+                    "term": self.current_term,
+                    "success": False,
+                    "match_index": self._last_log_index(),
+                }
+
+            if leader_term > self.current_term or self.role != NodeRole.FOLLOWER:
+                self._step_down(leader_term)
+
+            self.current_leader = payload["leader_id"]
+            self._reset_election_timer()
+
+            prev_log_index = payload["prev_log_index"]
+            prev_log_term = payload["prev_log_term"]
+
+            if prev_log_index > len(self.log):
+                return {
+                    "term": self.current_term,
+                    "success": False,
+                    "match_index": self._last_log_index(),
+                }
+
+            if prev_log_index > 0:
+                local_prev_term = self.log[prev_log_index - 1].term
+                if local_prev_term != prev_log_term:
+                    self.log = self.log[:prev_log_index - 1]
+                    return {
+                        "term": self.current_term,
+                        "success": False,
+                        "match_index": self._last_log_index(),
+                    }
+
+            incoming_entries = payload["entries"]
+            for entry_data in incoming_entries:
+                idx = entry_data["index"]
+
+                if idx <= len(self.log):
+                    local_entry = self.log[idx - 1]
+                    if local_entry.term != entry_data["term"]:
+                        self.log = self.log[:idx - 1]
+
+                if idx > len(self.log):
+                    self.log.append(
+                        LogEntry(
+                            term=entry_data["term"],
+                            index=entry_data["index"],
+                            command=entry_data["command"],
+                            timestamp=entry_data["timestamp"],
+                        )
+                    )
+
+            leader_commit = payload["leader_commit"]
+            if leader_commit > self.commit_index:
+                self.commit_index = min(leader_commit, len(self.log))
+
+            self.apply_committed_entries()
+
+            return {
+                "term": self.current_term,
+                "success": True,
+                "match_index": self._last_log_index(),
+            }
+
+    def _advance_commit_index(self):
+        for idx in range(len(self.log), self.commit_index, -1):
+            if self.log[idx - 1].term != self.current_term:
+                continue
+
+            replicated = 1
+            for peer in self.peer_names:
+                if self.match_index.get(peer, 0) >= idx:
+                    replicated += 1
+
+            if replicated >= self._majority_count():
+                self.commit_index = idx
+                self.apply_committed_entries()
+                break
+
+    def append_client_message(self, sender, content):
+        with self._lock:
+            if self.role != NodeRole.LEADER:
+                return {
+                    "ok": False,
+                    "redirect": self.current_leader,
+                    "error": "not_leader",
+                }
+
+            message_id = generate_message_id(sender, content)
+            command = {
+                "op": "store_message",
+                "message_id": message_id,
+                "sender": sender,
+                "content": content,
+                "client_ts": time.time(),
+            }
+
+            entry = LogEntry(
+                term=self.current_term,
+                index=len(self.log) + 1,
+                command=command,
+            )
+            self.log.append(entry)
+
+        success_count = 1
+        successful_replicas = [self.server.name]
+
+        for peer in self.peer_names:
+            replicated = self.replicate_until_match(peer)
+            if replicated:
+                success_count += 1
+                successful_replicas.append(peer)
+
+        with self._lock:
+            self._advance_commit_index()
+
+            if self.commit_index >= entry.index:
+                return {
+                    "ok": True,
+                    "message_id": message_id,
+                    "leader": self.server.name,
+                    "log_index": entry.index,
+                    "term": self.current_term,
+                    "replicated_to": success_count,
+                    "replicas": successful_replicas,
+                }
+
+            return {
+                "ok": False,
+                "error": "commit_failed",
+                "leader": self.server.name,
+                "replicated_to": success_count,
+            }
+
+    def replicate_until_match(self, peer, max_attempts=10):
+        for _ in range(max_attempts):
+            if self.replicate_to_peer(peer, heartbeat_only=False):
+                return True
+        return False
+
+    def apply_committed_entries(self):
+        while self.last_applied < self.commit_index:
+            self.last_applied += 1
+            entry = self.log[self.last_applied - 1]
+            self._apply(entry.command)
+
+    def _apply(self, command):
+        if command["op"] == "store_message":
+            message_id = command["message_id"]
+            if message_id not in self.server.message_store:
+                self.server.store_message(
+                    message_id,
+                    command["content"],
+                    sender=command["sender"],
+                )       
 
 
 class RaftCluster:
@@ -379,3 +600,20 @@ class RaftCluster:
             if node.server.is_alive and node.role == NodeRole.LEADER
         ]
         return leaders[0] if leaders else None    
+    
+    def append_message(self, sender, content):
+        leader = self.get_leader()
+        if not leader:
+            leader = self.elect_leader_blocking()
+
+        if not leader:
+            return {"ok": False, "error": "no_leader"}
+
+        result = leader.append_client_message(sender, content)
+
+        if not result["ok"] and result.get("redirect"):
+            redirected = self.nodes[result["redirect"]]
+            if redirected.server.is_alive:
+                return redirected.append_client_message(sender, content)
+
+        return result
