@@ -46,6 +46,48 @@ class InMemoryTransport:
         if not node or not node.server.is_alive:
             return None
         return node.handle_append_entries(payload)
+    
+    class InMemoryTransport:
+    def __init__(self):
+        self.nodes = {}
+        self.drop_rules = set()
+        self.lock = threading.Lock()
+
+    def register(self, node):
+        with self.lock:
+            self.nodes[node.server.name] = node
+
+    def disconnect(self, src, dst):
+        with self.lock:
+            self.drop_rules.add((src, dst))
+
+    def reconnect(self, src, dst):
+        with self.lock:
+            self.drop_rules.discard((src, dst))
+
+    def reconnect_all(self):
+        with self.lock:
+            self.drop_rules.clear()
+
+    def can_deliver(self, src, dst):
+        with self.lock:
+            return (src, dst) not in self.drop_rules
+
+    def request_vote(self, src, dst, payload):
+        if not self.can_deliver(src, dst):
+            return None
+        node = self.nodes.get(dst)
+        if not node or not node.server.is_alive:
+            return None
+        return node.handle_request_vote(payload)
+
+    def append_entries(self, src, dst, payload):
+        if not self.can_deliver(src, dst):
+            return None
+        node = self.nodes.get(dst)
+        if not node or not node.server.is_alive:
+            return None
+        return node.handle_append_entries(payload)
 
 
 class RaftNode:
@@ -449,7 +491,11 @@ class RaftNode:
                     message_id,
                     command["content"],
                     sender=command["sender"],
-                )       
+                )  
+
+    def on_server_recovered(self):
+        with self._lock:
+            self._reset_election_timer()                 
 
 
 class RaftCluster:
@@ -617,3 +663,20 @@ class RaftCluster:
                 return redirected.append_client_message(sender, content)
 
         return result
+    
+    def crash_node(self, node_name):
+        node = self.nodes[node_name]
+        node.server.simulate_crash()
+
+    def recover_node(self, node_name):
+        node = self.nodes[node_name]
+        node.server.simulate_recovery()
+        node.on_server_recovered()
+
+    def partition(self, isolated_node, other_nodes):
+        for other in other_nodes:
+            self.transport.disconnect(isolated_node, other)
+            self.transport.disconnect(other, isolated_node)
+
+    def heal_all_partitions(self):
+        self.transport.reconnect_all()
