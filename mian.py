@@ -5,6 +5,7 @@ from failure_detector import FailureDetector
 from replication import ReplicationManager
 from failover import FailoverManager
 from recovery_sync import RecoverySyncManager
+from raft_consensus import RaftCluster
 
 def divider(title):
     print("\n" + "=" * 60)
