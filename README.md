@@ -39,7 +39,7 @@ Core guarantees:
 ## Team Members
 
 | # | Name |  Responsibility |
-|---|------|--------------|----------------|
+|---|------|----------------|
 | 01 | Supun Dharmaratne | Fault Tolerance — Failure Detection & Automatic Recovery |
 | 02 | Ruchira Lakshan | Data Replication — Quorum-Based Consistency |
 | 03 | Sasiru Sithujaya | Time Synchronisation — Berkeley Algorithm |
