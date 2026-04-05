@@ -81,33 +81,8 @@ class TimeSyncManager:
 
         # Step 6: Return the master time
         return master_time
-    # ── TASK 2 ────────────────────────────────────────────────────────────────
-    # Assign a corrected timestamp to a message.
-    # Steps:
-    #   1. Get the server's local time using clock_sim.get_local_time(server_name)
-    #   2. Apply a correction if needed (use get_skew to find drift)
-    #   3. Store in self.message_timestamps[message_id]
-    #   4. Return the corrected timestamp
-    #
-    # Theory: Logical clocks — ensure message timestamps are consistent
-    # even if server clocks have drifted.
-    def timestamp_message(self, message_id, server_name):
-        # Step 1: Get the server's local (skewed) time
-        local_time = self.clock_sim.get_local_time(server_name)
 
-        # Step 2: Apply correction — subtract the skew offset to get true time
-        skew = self.clock_sim.get_skew(server_name)
-        corrected_timestamp = local_time - skew  # corrected = true wall-clock time
-
-        # Step 3: Store the corrected timestamp
-        self.message_timestamps[message_id] = corrected_timestamp
-
-        readable = time.strftime('%H:%M:%S', time.localtime(corrected_timestamp))
-        print(f"[TIME] Message '{message_id}' from {server_name} timestamped: {readable} (skew corrected: {-skew:+.3f}s)")
-
-        # Step 4: Return the corrected timestamp
-        return corrected_timestamp
-
+   
 
     # ── TASK 3 ────────────────────────────────────────────────────────────────
     # Sort a list of messages by their corrected timestamp.
