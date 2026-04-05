@@ -128,36 +128,5 @@ class TimeSyncManager:
         sorted_messages = sorted(messages, key=get_sort_key)
         return sorted_messages
 
-    # ── TASK 4 ────────────────────────────────────────────────────────────────
-    # Print a full sync report showing:
-    #   - Total sync events
-    #   - Each server's clock skew
-    #   - Number of messages with corrected timestamps
-    def print_report(self):
-        print("\n" + "=" * 50)
-        print("       TIME SYNCHRONISATION REPORT")
-        print("=" * 50)
 
-        # Total sync events
-        print(f"\n  Total sync events      : {len(self.sync_log)}")
-
-        # Each server's clock skew
-        print(f"\n  Clock skew per server:")
-        for server_name, skew in self.clock_sim.offsets.items():
-            direction = "fast" if skew > 0 else "slow"
-            print(f"    {server_name}: {skew:+.3f}s ({direction})")
-
-        # Number of messages with corrected timestamps
-        print(f"\n  Messages timestamped   : {len(self.message_timestamps)}")
-
-        if self.message_timestamps:
-            print(f"\n  Message timestamps:")
-            for msg_id, ts in sorted(self.message_timestamps.items(), key=lambda x: x[1]):
-                readable = time.strftime('%H:%M:%S', time.localtime(ts))
-                print(f"    {msg_id}: {readable}")
-
-        if self.sync_log:
-            print(f"\n  Last sync master time  : {time.strftime('%H:%M:%S', time.localtime(self.sync_log[-1]['master_time']))}")
-
-        print("=" * 50 + "\n")
 
