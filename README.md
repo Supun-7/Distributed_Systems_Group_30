@@ -36,14 +36,15 @@ Core guarantees:
 
 ---
 
+
 ## Team Members
 
-| # | Name |  Responsibility |
-|---|------|----------------|
-| 01 | Supun Dharmaratne | Fault Tolerance — Failure Detection & Automatic Recovery |
-| 02 | Ruchira Lakshan | Data Replication — Quorum-Based Consistency |
-| 03 | Sasiru Sithujaya | Time Synchronisation — Berkeley Algorithm |
-| 04 | Sachith Asmadala | Consensus & Agreement — Raft Leader Election |
+| # | Name | registration numbers | emails         |  Responsibility |
+|---|------|----------------------|----------------|-----------------|
+| 01 | Supun Dharmaratne | IT24101504 | IIT24101504@my.sliit.lk | Fault Tolerance — Failure Detection & Automatic Recovery |
+| 02 | Ruchira Lakshan | IT24101673 | IT24101673@my.sliit.lk | Data Replication — Quorum-Based Consistency |
+| 03 | Sasiru Sithujaya | IT24100722 | IT24100722@my.sliit.lk | Time Synchronisation — Berkeley Algorithm |
+| 04 | Sachith Asmadala | IT24103430 | IT24103430@my.sliit.lk | Consensus & Agreement — Raft Leader Election |
 
 ---
 
